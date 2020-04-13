@@ -12,7 +12,7 @@ setTimeout(async () => {
 
   protocol.write(Buffer.from(`$9\r\nhello\r\nworld\r\n`));
   protocol.parse();
-  console.log(protocol.data);
+  console.log(protocol.parse()[0]);
 
   let res: any;
   res = await client.command("INFO", "STATS");
