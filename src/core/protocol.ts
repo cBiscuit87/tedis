@@ -1,6 +1,6 @@
 import { Base } from "./base";
 
-const respStart = "(?<=\\r\\n|^)";
+const respStart = "(?:\\r\\n|^)"; // Lookbehinds weren't natively supported until node.js v8
 const respEnd = "(?=\\r\\n)";
 
 interface InterfaceParser {
@@ -55,20 +55,45 @@ export class RedisProtocolError extends Error {
 
 class ProtocolParser {
   public static parse(raw: string): InterfaceParser {
-    let masterRegex = [
-      "\\+(?<simple>.+?)",
-      "\\-(?<error>.+?)",
-      "\\:(?<int>-?\\d+)",
-      "(?<blobString>\\$blobRef_\\d+)", // Note: this matches our replaced Blob-Ref
-      "\\*(?<array_n>\\d+)(?<array>)",
-      "(\\$|\\*)(?<null_string>-1)",
-    ].join("|");
-
     // Preprocess blobs since they can include <CR><LF>
     const blobs = ProtocolParser.extractBlobs(raw, "$");
+    let masterRegexParts: string;
+    let masterRegex: RegExp;
+    let groupNames: string[] = [];
+    try {
+      masterRegexParts = [
+        "\\+(?<simple>.+?)",
+        "\\-(?<error>.+?)",
+        "\\:(?<int>-?\\d+)",
+        "(?<blobString>\\$blobRef_\\d+)", // Note: this matches our replaced Blob-Ref
+        "\\*(?<array_n>\\d+)(?<array>)",
+        "(\\$|\\*)(?<null_string>-1)",
+      ].join("|");
+      masterRegex = new RegExp(`${respStart}(?:${masterRegexParts})${respEnd}`, "g");
+    } catch (error) {
+      if (!/Invalid group$/.test(error.message)) { throw error; }
 
-    masterRegex = `${respStart}(?:${masterRegex})${respEnd}`;
-    const matches = Array.from(blobs.buffer.matchAll(new RegExp(masterRegex, "g")));
+      // Before node.js v10, named-capture-groups weren't supported
+      masterRegexParts = [
+        "\\+(.+?)", // simple
+        "\\-(.+?)", // error
+        "\\:(-?\\d+)", // int
+        "(\\$blobRef_\\d+)", // blobString Note: this matches our replaced Blob-Ref
+        "\\*(\\d+)", // array
+        "(\\$|\\*)(-1)", // null_string
+      ].join("|");
+      groupNames = [
+        "simple",
+        "error",
+        "int",
+        "blobString",
+        "array_n",
+        "null_string",
+      ];
+      masterRegex = new RegExp(`${respStart}(?:${masterRegexParts})${respEnd}`, "g");
+    }
+    const matches = Array.from(matchAll(blobs.buffer, masterRegex, groupNames));
+
     return {
       matches,
       blobs: blobs.output,
@@ -90,25 +115,24 @@ class ProtocolParser {
     let buffer = raw;
     let refInx = 0;
     // This expression matches all `\r\n$N\r\n` where `N` is digit(s) to find all blob specifications
-    const blobSizeRegex = `${respStart}\\${blobByte}(?<byteCount>\\d+)${respEnd}`;
-    const blobMatches = Array.from(buffer.matchAll(new RegExp(blobSizeRegex, "g")));
+    const blobSizeRegex = `${respStart}\\${blobByte}(\\d+)${respEnd}`;
+    const blobMatches = Array.from(matchAll(buffer, new RegExp(blobSizeRegex, "g"), []));
     for (const blob of blobMatches) {
-      if (blob.groups !== undefined) {
-        // this expression looks for something like `$N\r\n1..N\r\n` (where N = byteCount characters to match)
-        const fullBlobRegex = `${respStart}\\${blobByte}${blob.groups.byteCount}\\r\\n(?<blob>.*)${respEnd}`;
-        const blobMatch = buffer.match(new RegExp(fullBlobRegex, "su"));
+      const byteCount = blob[1];
+      // this expression looks for something like `$N\r\n1..N\r\n` (where N = byteCount characters to match)
+      const fullBlobRegex = `${respStart}\\${blobByte}${byteCount}\\r\\n((?:.|\n|\r\n)*)${respEnd}`;
+      const blobMatch = buffer.match(new RegExp(fullBlobRegex));
 
-        if (blobMatch !== null && blobMatch.groups !== undefined) {
-          const stringLength = parseInt(blob.groups.byteCount, 10);
-          const bulkString = Buffer.from(blobMatch.groups.blob).slice(0, stringLength);
+      if (blobMatch !== null) {
+        const stringLength = parseInt(byteCount, 10);
+        const bulkString = Buffer.from(blobMatch[1]).slice(0, stringLength);
 
-          if (bulkString.length === stringLength) {
-            const key = `${blobByte}blobRef_${refInx}`;
-            refInx++;
-            blobs.set(key, bulkString.toString());
-            const extractedBlobRegex = `${respStart}\\${blobByte}${blob.groups.byteCount}\\r\\n${blobs.get(key)}`;
-            buffer = buffer.replace(new RegExp(extractedBlobRegex, "s"), key);
-          }
+        if (bulkString.length === stringLength) {
+          const key = `${blobByte}blobRef_${refInx}`;
+          refInx++;
+          blobs.set(key, bulkString.toString());
+          const extractedBlobRegex = `(${respStart})\\${blobByte}${byteCount}\\r\\n${blobs.get(key)}`;
+          buffer = buffer.replace(new RegExp(extractedBlobRegex), `$1${key}`);
         }
       }
     }
@@ -143,4 +167,21 @@ class ProtocolParser {
       }
     }
   }
+}
+
+function matchAll(str: string, regexp: RegExp, groupNames: string[]) {
+  const output = new Array();
+  let match = regexp.exec(str);
+  while (match !== null) {
+    if (!("groups" in match)) {
+      const groups: {[key: string]: string} = {};
+      for (let inx = 1; inx < match.length; inx++) {
+        groups[groupNames[inx - 1]] = match[inx];
+      }
+      match.groups = groups;
+    }
+    output.push(match);
+    match = regexp.exec(str);
+  }
+  return output;
 }
