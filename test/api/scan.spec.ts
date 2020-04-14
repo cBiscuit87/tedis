@@ -20,8 +20,10 @@ afterAll(async () => {
 
 describe("Redis Scan", () => {
   it(`should scan`, async () => {
-    await Scan.rpush("a", 1);
-    await Scan.rpush("b", 2);
-    expect(await Scan.command("SCAN", 0)).toMatchObject(["0", ["a", "b"]]);
+    await Scan.rpush("listA", "something");
+    await Scan.rpush("listB", "something else");
+    const result = await Scan.command("SCAN", 0);
+    expect(result[0]).toEqual("0");
+    expect(result[1].sort()).toEqual(["listA", "listB"].sort());
   });
 });
