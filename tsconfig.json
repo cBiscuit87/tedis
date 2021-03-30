@@ -6,6 +6,7 @@
     "sourceMap": true,
     "strict": true,
     "baseUrl": "./",
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "moduleResolution": "node"
   }
 }

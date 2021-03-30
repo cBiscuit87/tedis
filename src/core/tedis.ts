@@ -23,6 +23,7 @@ export class Tedis extends Mixins<
   new (options?: {
     host?: string;
     port?: number;
+    username?: string;
     password?: string;
     timeout?: number;
     tls?: {

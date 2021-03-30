@@ -1,6 +1,7 @@
 # compiled output
 /dist
 /build
+/pkg
 
 # dependencies
 /node_modules

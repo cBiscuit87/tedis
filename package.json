@@ -9,11 +9,12 @@
     "pkg:test": "jest",
     "upload:doc": "chmod +x ./script/doc.sh && ./script/doc.sh",
     "upload:npm": "chmod +x ./script/npm.sh && ./script/npm.sh",
-    "precommit": "lint-staged"
+    "precommit": "lint-staged",
+    "pkg:pack": "pika build"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/silkjs/tedis.git"
+    "url": "git+https://github.com/cBiscuitSurprise/tedis.git"
   },
   "description": "redis client for node.js with typescript and async",
   "keywords": [
@@ -28,17 +29,24 @@
     {
       "name": "dasoncheng",
       "email": "dasoncheng@foxmail.com"
+    },
+    {
+      "name": "cBiscuitSurprise",
+      "email": ""
     }
   ],
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/silkjs/tedis/issues"
+    "url": "https://github.com/cBiscuitSurprise/tedis/issues"
   },
-  "homepage": "https://github.com/silkjs/tedis#readme",
+  "homepage": "https://github.com/cBiscuitSurprise/tedis#readme",
   "dependencies": {
     "uuid": "^3.3.2"
   },
   "devDependencies": {
+    "@pika/pack": "^0.5.0",
+    "@pika/plugin-build-node": "^0.9.2",
+    "@pika/plugin-ts-standard-pkg": "^0.9.2",
     "@types/jest": "^24.0.15",
     "@types/node": "^12.0.10",
     "@types/uuid": "^3.4.4",
@@ -69,6 +77,20 @@
     },
     "ignore": [
       "*.min.js"
+    ]
+  },
+  "@pika/pack": {
+    "pipeline": [
+      [
+        "@pika/plugin-ts-standard-pkg",
+        {
+          "tsconfig": "src/tsconfig.app.json"
+        }
+      ],
+      [
+        "@pika/plugin-build-node",
+        {}
+      ]
     ]
   }
 }

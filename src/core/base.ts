@@ -3,7 +3,7 @@ import { createConnection, Socket } from "net";
 import { connect, TLSSocket } from "tls";
 import { v4 as uuidv4 } from "uuid";
 // core
-import { Protocol, RedisProtocolError } from "./protocol";
+import { Protocol } from "./protocol";
 
 type callback = (err: boolean, res: any) => void;
 
@@ -15,6 +15,11 @@ export interface InterfaceBase {
   on(event: "error", listener: (err: Error) => void): void;
   on(event: "close", listener: (had_error: boolean) => void): void;
   on(event: string, listener: (...args: any[]) => void): void;
+}
+
+export interface InterfaceAuth {
+  username?: string;
+  password?: string;
 }
 
 export class Base implements InterfaceBase {
@@ -30,6 +35,7 @@ export class Base implements InterfaceBase {
     options: {
       host?: string;
       port?: number;
+      username?: string;
       password?: string;
       timeout?: number;
       tls?: {
@@ -59,8 +65,16 @@ export class Base implements InterfaceBase {
     if ("number" === typeof options.timeout) {
       this.socket.setTimeout(options.timeout);
     }
-    if ("string" === typeof options.password) {
-      this.auth(options.password);
+
+    if ("string" === typeof options.username) {
+      this.auth({
+        username: options.username,
+        password: options.password,
+      });
+    } else if ("string" === typeof options.password) {
+      this.auth({
+        password: options.password,
+      });
     }
   }
   public command(...parameters: Array<string | number>): Promise<any> {
@@ -95,9 +109,22 @@ export class Base implements InterfaceBase {
         throw new Error("event not found");
     }
   }
-  private async auth(password: string) {
+  private async auth(options: InterfaceAuth): Promise<any> {
     try {
-      const authResponse = await this.command("AUTH", password);
+      let authResponse;
+      if (typeof options.username === "string" && typeof options.password === "string") {
+        // user with password
+        authResponse = await this.command("AUTH", options.username, options.password);
+      } else if (typeof options.username === "string") {
+        // user with nopass
+        authResponse = await this.command("AUTH", options.username);
+      } else if (typeof options.password === "string") {
+        // default user with password
+        authResponse = await this.command("AUTH", options.password);
+      } else {
+        authResponse = new Error(`Invalid AUTH options: ${JSON.stringify(options)}`);
+      }
+
       if (authResponse instanceof Error) { throw authResponse; }
       return authResponse;
     } catch (error) {
@@ -133,7 +160,7 @@ export class Base implements InterfaceBase {
     this.socket.on("data", (data) => {
       this.protocol.write(data);
       const parsed = this.protocol.parse();
-      parsed.forEach((message) => {
+      parsed.forEach((message: string) => {
         (this.callbacks.shift() as callback)(
           false,
           message
